@@ -22,10 +22,24 @@ export function exportBoard(state: BoardState, filename: string = 'taskboard-bac
     const link = document.createElement('a');
     link.href = url;
     link.download = `${filename}.json.gz`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+
+    // Ensure it's attached to the DOM for all browsers
+    if (document.body) {
+      document.body.appendChild(link);
+    } else {
+      document.documentElement.appendChild(link);
+    }
+
+    // Trigger download
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    // Clean up - use setTimeout to ensure download is initiated first
+    setTimeout(() => {
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+      URL.revokeObjectURL(url);
+    }, 100);
 
     // Update last backup time
     setLastBackupTime();

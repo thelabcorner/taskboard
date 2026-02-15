@@ -43,6 +43,7 @@ export function App() {
     moveTask,
     reorderColumns,
     setColumnTasksStatus,
+    setColumnTasksPriority,
     addTag,
     importBoardState,
   } = useDatabase();
@@ -249,6 +250,7 @@ export function App() {
                     onUpdateTask={updateTask}
                     onDeleteTask={deleteTask}
                     onSetColumnTasksStatus={setColumnTasksStatus}
+                    onSetColumnTasksPriority={setColumnTasksPriority}
                     onOpenTaskModal={handleOpenTaskModal}
                   />
                 ))}

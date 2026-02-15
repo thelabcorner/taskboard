@@ -7,7 +7,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
-import { Column as ColumnType, Task, Tag, Status } from '../types';
+import { Column as ColumnType, Task, Tag, Status, Priority } from '../types';
 import { TaskCard } from './TaskCard';
 import { cn } from '../utils/cn';
 import { 
@@ -20,6 +20,8 @@ import {
   Pause,
   CheckCircle2,
   ChevronRight,
+  AlertCircle,
+  Zap,
 } from 'lucide-react';
 
 interface ColumnProps {
@@ -32,6 +34,7 @@ interface ColumnProps {
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onDeleteTask: (taskId: string) => void;
   onSetColumnTasksStatus: (columnId: string, status: Status) => void;
+  onSetColumnTasksPriority: (columnId: string, priority: Priority) => void;
   onOpenTaskModal: (task: Task) => void;
 }
 
@@ -40,6 +43,13 @@ const statusConfig: Record<Status, { label: string; color: string; icon: React.R
   'in-progress': { label: 'In Progress', color: 'text-blue-400', icon: <Clock className="w-3.5 h-3.5" /> },
   'paused': { label: 'Paused', color: 'text-amber-400', icon: <Pause className="w-3.5 h-3.5" /> },
   'done': { label: 'Done', color: 'text-green-400', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
+};
+
+const priorityConfig: Record<Priority, { label: string; color: string; icon: React.ReactNode }> = {
+  'urgent': { label: 'Urgent', color: 'text-red-400', icon: <AlertCircle className="w-3.5 h-3.5" /> },
+  'high': { label: 'High', color: 'text-orange-400', icon: <Zap className="w-3.5 h-3.5" /> },
+  'medium': { label: 'Medium', color: 'text-yellow-400', icon: <Circle className="w-3.5 h-3.5" /> },
+  'low': { label: 'Low', color: 'text-zinc-500', icon: <Circle className="w-3.5 h-3.5" /> },
 };
 
 interface DropdownPosition {
@@ -170,11 +180,11 @@ function PortalDropdown({ isOpen, onClose, triggerRef, children, width = 180, es
       }
     };
     const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
     }, 0);
     return () => {
       clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
     };
   }, [isOpen, onClose, triggerRef]);
 
@@ -252,13 +262,28 @@ function StatusSubmenu({ isOpen, onClose, parentRef, onSelectStatus }: StatusSub
       }
     };
     const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
     }, 0);
     return () => {
       clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
     };
   }, [isOpen, onClose, parentRef]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      console.log('[DEBUG] StatusSubmenu rendered');
+    }
+  }, [isOpen]);
 
   if (!isOpen || !position) return null;
 
@@ -272,12 +297,16 @@ function StatusSubmenu({ isOpen, onClose, parentRef, onSelectStatus }: StatusSub
         minWidth: 140,
         zIndex: 10000,
       }}
+      onMouseDown={() => console.log('[DEBUG] StatusSubmenu mouseDown')}
     >
       {(Object.keys(statusConfig) as Status[]).map((status) => (
         <button
           key={status}
+          onMouseDown={() => console.log('[DEBUG] Status submenu item mouseDown:', status)}
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
+            console.log('[DEBUG] Status submenu item click:', status);
             onSelectStatus(status);
           }}
           className={cn(
@@ -287,6 +316,113 @@ function StatusSubmenu({ isOpen, onClose, parentRef, onSelectStatus }: StatusSub
         >
           {statusConfig[status].icon}
           {statusConfig[status].label}
+        </button>
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+// Priority submenu component
+interface PrioritySubmenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  parentRef: React.RefObject<HTMLButtonElement | null>;
+  onSelectPriority: (priority: Priority) => void;
+}
+
+function PrioritySubmenu({ isOpen, onClose, parentRef, onSelectPriority }: PrioritySubmenuProps) {
+  const [position, setPosition] = useState<DropdownPosition | null>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!parentRef.current || !isOpen) return;
+    const parentRect = parentRef.current.getBoundingClientRect();
+    const pos = calculateSubmenuPosition(parentRect, 120, 145);
+    setPosition(pos);
+  }, [parentRef, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition();
+      const handleScrollOrResize = () => updatePosition();
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
+      return () => {
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+        window.removeEventListener('resize', handleScrollOrResize);
+      };
+    }
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        submenuRef.current &&
+        !submenuRef.current.contains(target) &&
+        parentRef.current &&
+        !parentRef.current.contains(target)
+      ) {
+        onClose();
+      }
+    };
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [isOpen, onClose, parentRef]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      console.log('[DEBUG] PrioritySubmenu rendered');
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !position) return null;
+
+  return createPortal(
+    <div
+      ref={submenuRef}
+      className="fixed bg-zinc-800 border border-zinc-700 rounded-lg shadow-2xl shadow-black/50 py-1 animate-in fade-in-0 zoom-in-95 duration-100"
+      style={{
+        top: position.top,
+        left: position.left,
+        minWidth: 120,
+        zIndex: 10000,
+      }}
+      onMouseDown={() => console.log('[DEBUG] PrioritySubmenu mouseDown')}
+    >
+      {(Object.keys(priorityConfig) as Priority[]).map((priority) => (
+        <button
+          key={priority}
+          onMouseDown={() => console.log('[DEBUG] Priority submenu item mouseDown:', priority)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[DEBUG] Priority submenu item click:', priority);
+            onSelectPriority(priority);
+          }}
+          className={cn(
+            'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-700 transition-colors',
+            priorityConfig[priority].color
+          )}
+        >
+          {priorityConfig[priority].icon}
+          {priorityConfig[priority].label}
         </button>
       ))}
     </div>,
@@ -304,6 +440,7 @@ export function Column({
   onUpdateTask,
   onDeleteTask,
   onSetColumnTasksStatus,
+  onSetColumnTasksPriority,
   onOpenTaskModal,
 }: ColumnProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -312,9 +449,11 @@ export function Column({
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showStatusSubmenu, setShowStatusSubmenu] = useState(false);
+  const [showPrioritySubmenu, setShowPrioritySubmenu] = useState(false);
 
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const statusBtnRef = useRef<HTMLButtonElement>(null);
+  const priorityBtnRef = useRef<HTMLButtonElement>(null);
 
   const {
     attributes,
@@ -353,17 +492,38 @@ export function Column({
   const handleCloseMenu = () => {
     setShowMenu(false);
     setShowStatusSubmenu(false);
+    setShowPrioritySubmenu(false);
   };
 
   const handleSelectStatus = (status: Status) => {
     onSetColumnTasksStatus(column.id, status);
-    handleCloseMenu();
+    // Use setTimeout to ensure state update completes before closing menu
+    setTimeout(() => {
+      handleCloseMenu();
+    }, 0);
+  };
+
+  const handleSelectPriority = (priority: Priority) => {
+    console.log('[DEBUG] handleSelectPriority called:', column.id, priority);
+    onSetColumnTasksPriority(column.id, priority);
+    setTimeout(() => {
+      handleCloseMenu();
+    }, 0);
   };
 
   const sortedTasks = [...tasks].sort((a, b) => a.order - b.order);
   const taskIds = sortedTasks.map((t) => t.id);
   const totalTasks = tasks.length;
   const doneTasks = tasks.filter((t) => t.status === 'done').length;
+
+  // Debug log for priority submenu trigger
+  const handlePrioritySubmenuTrigger = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[DEBUG] Priority submenu trigger clicked for column', column.id);
+    setShowPrioritySubmenu(true);
+    setShowStatusSubmenu(false);
+  };
 
   return (
     <div
@@ -423,6 +583,7 @@ export function Column({
                 onClick={() => {
                   setShowMenu(!showMenu);
                   setShowStatusSubmenu(false);
+                  setShowPrioritySubmenu(false);
                 }}
                 className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors rounded hover:bg-zinc-800"
               >
@@ -434,18 +595,30 @@ export function Column({
                 onClose={handleCloseMenu}
                 triggerRef={menuBtnRef}
                 width={180}
-                estimatedHeight={80}
+                estimatedHeight={120}
               >
                 {/* Mark all as status submenu trigger */}
                 <button
                   ref={statusBtnRef}
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
-                    setShowStatusSubmenu(!showStatusSubmenu);
+                    setShowStatusSubmenu(true);
+                    setShowPrioritySubmenu(false);
                   }}
                   className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
                 >
                   <span>Mark all tasks as...</span>
+                  <ChevronRight className="w-3 h-3 text-zinc-500" />
+                </button>
+
+                {/* Set all priority submenu trigger */}
+                <button
+                  ref={priorityBtnRef}
+                  onClick={handlePrioritySubmenuTrigger}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors"
+                >
+                  <span>Set all priority...</span>
                   <ChevronRight className="w-3 h-3 text-zinc-500" />
                 </button>
 
@@ -468,6 +641,13 @@ export function Column({
                 onClose={() => setShowStatusSubmenu(false)}
                 parentRef={statusBtnRef}
                 onSelectStatus={handleSelectStatus}
+              />
+
+              <PrioritySubmenu
+                isOpen={showPrioritySubmenu}
+                onClose={() => setShowPrioritySubmenu(false)}
+                parentRef={priorityBtnRef}
+                onSelectPriority={handleSelectPriority}
               />
             </div>
           </div>

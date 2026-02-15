@@ -1,7 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { useState, useEffect, useCallback } from 'react';
 import pako from 'pako';
-import { BoardState, Column, Task, Tag, Status, TAG_COLORS } from '../types';
+import { BoardState, Column, Task, Tag, Status, Priority, TAG_COLORS } from '../types';
 import { attemptRecovery, createRecoveryBackup } from '../utils/RecoveryManager';
 
 interface TaskBoardDB extends DBSchema {
@@ -279,6 +279,18 @@ export function useDatabase() {
     saveState({ ...state, tasks: updatedTasks });
   }, [state, saveState]);
 
+  const setColumnTasksPriority = useCallback((columnId: string, priority: Priority) => {
+    console.log('[DEBUG] setColumnTasksPriority called:', columnId, priority);
+    const updatedTasks = state.tasks.map((task) => {
+      if (task.columnId === columnId) {
+        console.log('[DEBUG] updating task:', task.id, 'from', task.priority, 'to', priority);
+        return { ...task, priority };
+      }
+      return task;
+    });
+    saveState({ ...state, tasks: updatedTasks });
+  }, [state, saveState]);
+
   const addTag = useCallback((name: string, color: string): Tag => {
     const newTag: Tag = {
       id: `tag-${Date.now()}`,
@@ -334,6 +346,7 @@ export function useDatabase() {
     moveTask,
     reorderColumns,
     setColumnTasksStatus,
+    setColumnTasksPriority,
     addTag,
     deleteTag,
     searchTasks,

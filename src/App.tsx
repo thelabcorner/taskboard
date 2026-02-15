@@ -1,4 +1,4 @@
-import { useState } from 'react';
+ import { useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -22,13 +22,18 @@ import { Column } from './components/Column';
 import { TaskCard } from './components/TaskCard';
 import { TaskModal } from './components/TaskModal';
 import { SearchBar } from './components/SearchBar';
+import { BackupReminder } from './components/BackupReminder';
+import { BackupControls } from './components/BackupControls';
+import { RecoveryNotification } from './components/RecoveryNotification';
 import { Task } from './types';
 import { Plus, Layout } from 'lucide-react';
+import { exportBoard } from './utils/BackupManager';
 
 export function App() {
   const {
     state,
     isLoading,
+    recoveryInfo,
     addColumn,
     updateColumn,
     deleteColumn,
@@ -39,12 +44,15 @@ export function App() {
     reorderColumns,
     setColumnTasksStatus,
     addTag,
+    importBoardState,
   } = useDatabase();
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [modalTask, setModalTask] = useState<Task | null>(null);
+  const [exportTrigger, setExportTrigger] = useState(0);
+  const [showRecoveryNotification, setShowRecoveryNotification] = useState(recoveryInfo.recovered);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -169,6 +177,9 @@ export function App() {
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-zinc-950 to-zinc-950 pointer-events-none" />
       <div className="fixed inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiMyNzI3MmEiIGZpbGwtb3BhY2l0eT0iMC4yIj48Y2lyY2xlIGN4PSIxIiBjeT0iMSIgcj0iMSIvPjwvZz48L2c+PC9zdmc+')] opacity-50 pointer-events-none" />
 
+      {/* Backup Reminder */}
+      <BackupReminder onExport={() => setExportTrigger(prev => prev + 1)} />
+
       {/* Header */}
       <header className="relative z-20 border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-md">
         <div className="px-6 py-4">
@@ -202,7 +213,11 @@ export function App() {
               />
             </div>
 
-            <div className="w-[180px] hidden lg:block" />
+            <BackupControls
+              state={state}
+              onImport={importBoardState}
+              onExportClick={() => setExportTrigger(prev => prev + 1)}
+            />
           </div>
         </div>
       </header>
@@ -322,6 +337,14 @@ export function App() {
           onUpdate={updateTask}
           onClose={handleCloseTaskModal}
           onAddTag={addTag}
+        />
+      )}
+
+      {/* Recovery Notification */}
+      {showRecoveryNotification && recoveryInfo.recovered && recoveryInfo.source && (
+        <RecoveryNotification
+          source={recoveryInfo.source}
+          onDismiss={() => setShowRecoveryNotification(false)}
         />
       )}
     </div>

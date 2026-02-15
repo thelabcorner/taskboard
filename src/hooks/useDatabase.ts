@@ -1,6 +1,8 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { useState, useEffect, useCallback } from 'react';
+import pako from 'pako';
 import { BoardState, Column, Task, Tag, Status, TAG_COLORS } from '../types';
+import { attemptRecovery, createRecoveryBackup } from '../utils/RecoveryManager';
 
 interface TaskBoardDB extends DBSchema {
   board: {
@@ -56,20 +58,101 @@ function migrateState(state: BoardState): BoardState {
   };
 }
 
+// Compress board state for storage
+function compressState(state: BoardState): string {
+  try {
+    const json = JSON.stringify(state);
+    const compressed = pako.gzip(json);
+    // Convert to base64 for storage in IndexedDB
+    return btoa(String.fromCharCode.apply(null, Array.from(compressed) as any));
+  } catch (error) {
+    console.error('Failed to compress state:', error);
+    // Fallback to uncompressed if compression fails
+    return JSON.stringify(state);
+  }
+}
+
+// Decompress board state from storage
+function decompressState(data: string | BoardState): BoardState {
+  try {
+    // If already a BoardState object, return it (handles old uncompressed data)
+    if (typeof data === 'object') {
+      return data as BoardState;
+    }
+
+    // Try to decompress as base64-encoded gzip
+    const binaryString = atob(data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const decompressed = pako.ungzip(bytes);
+    const json = new TextDecoder().decode(decompressed);
+    return JSON.parse(json) as BoardState;
+  } catch (error) {
+    console.error('Failed to decompress state:', error);
+    // Fallback: try to parse as plain JSON (for backward compatibility)
+    try {
+      if (typeof data === 'string') {
+        return JSON.parse(data);
+      }
+    } catch (_) {
+      // Silent fail
+    }
+    return defaultState;
+  }
+}
+
 export function useDatabase() {
   const [state, setState] = useState<BoardState>(defaultState);
   const [isLoading, setIsLoading] = useState(true);
+  const [recoveryInfo, setRecoveryInfo] = useState<{
+    recovered: boolean;
+    source: 'indexeddb' | 'localstorage' | 'cookies' | null;
+  }>({ recovered: false, source: null });
 
   useEffect(() => {
     async function loadData() {
       try {
         const db = await getDB();
-        const savedState = await db.get('board', 'state');
+        let savedState = await db.get('board', 'state');
+
+        // Decompress if necessary (handles both old uncompressed and new compressed data)
         if (savedState) {
-          setState(migrateState(savedState));
+          savedState = decompressState(savedState);
+        }
+
+        // If no saved state, attempt recovery
+        if (!savedState) {
+          const recovery = await attemptRecovery();
+          if (recovery.recovered && recovery.state) {
+            savedState = recovery.state;
+            setRecoveryInfo({
+              recovered: true,
+              source: recovery.source,
+            });
+            // Save the recovered state to the main database (compressed)
+            await db.put('board', compressState(savedState), 'state');
+          }
+        }
+
+        if (savedState) {
+          const migratedState = migrateState(savedState);
+          setState(migratedState);
+          // Create a recovery backup immediately
+          await createRecoveryBackup(migratedState);
         }
       } catch (error) {
         console.error('Failed to load from IndexedDB:', error);
+        // Attempt recovery even if there's an error
+        const recovery = await attemptRecovery();
+        if (recovery.recovered && recovery.state) {
+          setState(migrateState(recovery.state));
+          setRecoveryInfo({
+            recovered: true,
+            source: recovery.source,
+          });
+        }
       } finally {
         setIsLoading(false);
       }
@@ -81,7 +164,11 @@ export function useDatabase() {
     setState(newState);
     try {
       const db = await getDB();
-      await db.put('board', newState, 'state');
+      // Compress state before saving
+      const compressedState = compressState(newState);
+      await db.put('board', compressedState, 'state');
+      // Create recovery backups after saving
+      await createRecoveryBackup(newState);
     } catch (error) {
       console.error('Failed to save to IndexedDB:', error);
     }
@@ -230,9 +317,14 @@ export function useDatabase() {
     });
   }, [state.tasks, state.tags]);
 
+  const importBoardState = useCallback((newState: BoardState) => {
+    saveState(newState);
+  }, [saveState]);
+
   return {
     state,
     isLoading,
+    recoveryInfo,
     addColumn,
     updateColumn,
     deleteColumn,
@@ -245,5 +337,6 @@ export function useDatabase() {
     addTag,
     deleteTag,
     searchTasks,
+    importBoardState,
   };
 }

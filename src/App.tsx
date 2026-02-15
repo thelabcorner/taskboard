@@ -1,4 +1,4 @@
- import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -54,6 +54,13 @@ export function App() {
   const [modalTask, setModalTask] = useState<Task | null>(null);
   const [exportTrigger, setExportTrigger] = useState(0);
   const [showRecoveryNotification, setShowRecoveryNotification] = useState(recoveryInfo.recovered);
+
+  // Trigger export when exportTrigger changes
+  useEffect(() => {
+    if (exportTrigger > 0) {
+      exportBoard(state);
+    }
+  }, [exportTrigger, state]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
